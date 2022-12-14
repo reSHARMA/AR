@@ -35,10 +35,46 @@
     init: function() {
       var data = this.data;
       console.log(data);
+      this.interactionOn = function(object, interaction) {
+        switch (interaction) {
+          case 'block':
+          case 'invisible':
+            object.visible = false;
+            break;
+          case 'shrink':
+            object.scale.set(0.4, 0.4, 0.4);
+            break;
+          case 'check':
+          case 'highlight':
+            if (object.material.color.getHex() != 0xFFFF00)
+              this.oldColor = object.material.color.getHex();
+            object.material.color.setHex(0xFFFF00);
+            break;
+        }
+      };
+      this.interactionOff = function(object, interaction) {
+        switch (interaction) {
+          case 'block':
+          case 'invisible':
+            object.visible = true;
+            break;
+          case 'shrink':
+            object.scale.set(1, 1, 1);
+            break;
+          case 'check':
+          case 'highlight':
+            console.log(this.oldColor);
+            object.material.color.setHex(this.oldColor);
+            break;
+        }
+      };
       var color = '#AAA';
       this.height = 4;
       var depth = 30;
       var el = this.el;
+      x = el;
+      //this.oldColor = el.object3D.material.color;
+      //console.log(this.oldColor);
       // width box.max.x height box.max.y depth box.max.z
       box = new THREE.Box3().setFromObject(el.object3D);
       var width = box.max.x;
@@ -46,10 +82,10 @@
         width = 5;
       // TODO: width based on object's size
       width = 1.75;
-      this.geometry = new THREE.ConeBufferGeometry(width, this.height, depth);
-      this.material = new THREE.MeshPhongMaterial({
+      this.ggeometry = new THREE.ConeBufferGeometry(width, this.height, depth);
+      this.mmaterial = new THREE.MeshPhongMaterial({
         color: "#" + Math.floor(Math.random() * 16777215).toString(16),
-        opacity: 0.5,
+        opacity: 0, // demo
         transparent: true,
         side: THREE.DoubleSide,
       });
@@ -61,55 +97,66 @@
       for (const side of data.face) {
         switch (side) {
           case 'right':
-            var field = new THREE.Mesh(this.geometry, this.material);
+            var field = new THREE.Mesh(this.ggeometry, this.mmaterial);
             field.rotation.z += 3.14 / 2;
             field.position.x += this.height / 2;
+            field.name = "_internal";
             var bbox = new THREE.BoundingBoxHelper(field, 0xff0000);
+            bbox.name = "_internal";
             boxes.add(bbox);
             interactions.add(field);
             break;
           case 'left':
-            var field = new THREE.Mesh(this.geometry, this.material);
+            var field = new THREE.Mesh(this.ggeometry, this.mmaterial);
             field.rotation.z -= 3.14 / 2;
             field.position.x -= this.height / 2;
-            var bbox = new THREE.BoundingBoxHelper(field, 0xff0000);
+            field.name = "_internal";
+            var bbox = new THREE.BoxHelper(field, 0xff0000);
+            bbox.name = "_internal";
             boxes.add(bbox);
             interactions.add(field);
             break;
           case 'top':
-            var field = new THREE.Mesh(this.geometry, this.material);
+            var field = new THREE.Mesh(this.ggeometry, this.mmaterial);
             field.rotation.x -= 3.14;
             field.position.y += this.height / 2;
-            var bbox = new THREE.BoundingBoxHelper(field, 0xff0000);
+            field.name = "_internal";
+            var bbox = new THREE.BoxHelper(field, 0xff0000);
+            bbox.name = "_internal";
             boxes.add(bbox);
             interactions.add(field);
             break;
           case 'down':
-            var field = new THREE.Mesh(this.geometry, this.material);
+            var field = new THREE.Mesh(this.ggeometry, this.mmaterial);
             field.position.y -= this.height / 2;
-            var bbox = new THREE.BoundingBoxHelper(field, 0xff0000);
+            field.name = "_internal";
+            var bbox = new THREE.BoxHelper(field, 0xff0000);
+            bbox.name = "_internal";
             boxes.add(bbox);
             interactions.add(field);
             break;
           case 'front':
-            var field = new THREE.Mesh(this.geometry, this.material);
+            var field = new THREE.Mesh(this.ggeometry, this.mmaterial);
             field.rotation.x += 3.14 / 2 + 3.14;
             field.position.z += this.height / 2;
-            var bbox = new THREE.BoundingBoxHelper(field, 0xff0000);
+            field.name = "_internal";
+            var bbox = new THREE.BoxHelper(field, 0xff0000);
+            bbox.name = "_internal";
             boxes.add(bbox);
             interactions.add(field);
             break;
           case 'back':
-            var field = new THREE.Mesh(this.geometry, this.material);
+            var field = new THREE.Mesh(this.ggeometry, this.mmaterial);
             field.rotation.x += 3.14 / 2;
             field.position.z -= this.height / 2;
-            var bbox = new THREE.BoundingBoxHelper(field, 0xff0000);
+            field.name = "_internal";
+            var bbox = new THREE.BoxHelper(field, 0xff0000);
+            bbox.name = "_internal";
             boxes.add(bbox);
             interactions.add(field);
             break;
         }
       }
-      x = el;
       el.object3D.add(interactions);
       // el.object3D.add(boxes);
       this.rc = new THREE.Raycaster();
@@ -123,31 +170,37 @@
       const LineMat = new THREE.LineBasicMaterial({
         color: 0x0000ff
       });
+      this.arrowsHelp = [];
       this.points = [];
+      this.boxes = [];
+      this.objBox = new THREE.Box3();
+      this.childBox = new THREE.Box3();
       this.IObj = new Set();
       for (let field in el.object3D.children) {
         if (el.object3D.children[field].name.startsWith("field-")) {
           for (let idx in el.object3D.children[field].children) {
             var child = el.object3D.children[field].children[idx];
+            //var box = child.geometry.boundingBox.clone();
+            //box.applyMatrix4(child.matrixWorld);
+            this.boxes.push(child);
             var position = child.geometry.attributes.position;
-            for (let i = 32; i < position.count; i+=2) {
+            for (let i = 32; i < position.count; i += 2) {
               var vector = new THREE.Vector3();
               vector.fromBufferAttribute(position, i);
               var globalVertex = vector.applyMatrix4(child.matrix);
-              var directionVector = globalVertex.sub(child.position );
+              var directionVector = globalVertex.sub(child.position);
               var ray = new THREE.Raycaster(child.position, directionVector.clone().normalize());
-              var Temp = new THREE.ArrowHelper(ray.direction, ray.origin, 10, Math.random() * 0xffffff );
+              var Temp = new THREE.ArrowHelper(ray.direction, ray.origin, 10, Math.random() * 0xffffff);
               //el.sceneEl.object3D.add(Temp);
               //vector.applyMatrix4(child.matrixWorld);
               var posi = new THREE.Vector3();
               //posi.setPositionFromMatrix(el.object3D.matrixWorld);
               // vector.round();
-              
               geometry = new THREE.BufferGeometry().setFromPoints([center, vector]);
               line = new THREE.Line(geometry, LineMat);
               //el.sceneEl.object3D.add(line);
               // console.log(line);
-              arrow = new THREE.ArrowHelper(vector, center, 10, Math.random() * 0xffffff );
+              arrow = new THREE.ArrowHelper(vector, center, 10, Math.random() * 0xffffff);
               //el.sceneEl.object3D.add(arrow);
               this.points.push(directionVector);
             }
@@ -160,7 +213,7 @@
             //   points.push(vector);
             // }
           }
-          el.object3D.remove(el.object3D.children[field]);
+          //el.object3D.remove(el.object3D.children[field]);
         }
       }
       // console.log(this.points);
@@ -185,41 +238,81 @@
       del.forEach(V => el.object3D.remove(V));
     },
     tick: function(time, timeDelta) {
-      //if(time > 100) return 0;
+      //if(time > 1000) return 0;
+
       var el = this.el;
       var center = el.object3D.position;
+      var outside = true;
+      
+      for (let i in this.arrowsHelp){
+        el.sceneEl.object3D.remove(this.arrowsHelp[i]);
+      }
+      
       this.IObj.forEach((Value) => {
-        // if(!the object is still in the bounding box of cone)
-        Value.visible=true;
+        for (let i in this.boxes) {
+          // console.log(Value.geometry.boundingBox);
+          if (Value.geometry.boundingBox == null) continue;
+          this.objBox.copy(Value.geometry.boundingBox);
+          this.objBox.applyMatrix4(Value.matrixWorld);
+          this.childBox.copy(this.boxes[i].geometry.boundingBox);
+          this.childBox.applyMatrix4(this.boxes[i].matrixWorld);
+          //el.sceneEl.object3D.add(new THREE.Box3Helper(this.objBox, 0x000)); // demo
+          //el.sceneEl.object3D.add(new THREE.Box3Helper(this.childBox, 0x000)); // demo
+          if (this.childBox.intersectsBox(this.objBox)) {
+            outside = false;
+            break;
+          }
+        }
+        if (outside) this.interactionOff(Value, this.data.interaction);
+        else this.interactionOn(Value, this.data.interaction);
+        // Value.visible=outside;
+        // if(!outside)
+        //   Value.material.opacity = 0.5;
+        // else
+        //   Value.material.opacity = 1;
       });
       this.IObj.clear();
       // var arrow;
-      for(let idx in this.points) {
+      
+      for (let idx in this.points) {
         this.rc.set(center, this.points[idx].normalize());
         // el.sceneEl.object3D.remove(arrow);
-        // arrow = new THREE.ArrowHelper( this.rc.ray.direction, this.rc.ray.origin, 10, Math.random() * 0xffffff );
-        // el.sceneEl.object3D.add(arrow);
-        var intersect = this.rc.intersectObject(el.sceneEl.object3D.children[1].children[0]);
-        for(let i in intersect) {
-          if(intersect[i].distance < 20)
+        //arrow = new THREE.ArrowHelper( this.rc.ray.direction, this.rc.ray.origin, 10, Math.random() * 0xffffff ); //demo
+        //el.sceneEl.object3D.add(arrow); // demo
+        //this.arrowsHelp.push(arrow);
+        // var intersect = this.rc.intersectObject(el.sceneEl.object3D.children[1].children[0]);
+        var intersect = this.rc.intersectObject(el.sceneEl.object3D);
+        // console.log(intersect);
+        for (let i in intersect) {
+          if (intersect[i].distance < 10 && intersect[i].object.name != "_internal")
             this.IObj.add(intersect[i].object);
         }
       }
       this.IObj.forEach((Value) => {
-        Value.visible=false;
+        this.interactionOn(Value, this.data.interaction);
+        // Value.visible=false;
+        // Value.material.opacity = 0.5;
       });
     }
   });
 </script>
-<a-scene ar>
+  
+<<a-scene ar>
+  <!--a-entity environment="preset: contact"></a-entity>-->
+  <a-entity camera="active: true" look-controls position="0 1.6 10"></a-entity>
   <a-entity id="rig">
-    <a-entity semantics="" id="camera" camera look-controls wasd-controls></a-entity>
+    <!--<a-entity id="camera" look-controls wasd-controls camera></a-entity>-->
   </a-entity>
-  <!--<a-sphere position="10 0 -15" radius="1.25" color="#EF2D5E"></a-sphere>-->
-  <a-box position="-40 0 -13" animation="property: position; to: 40 0 -13; dur: 5500; easing: linear; loop: true" color="tomato"></a-box>
 
-  <a-box semantics="face:front;" position="0 0 -15" radius="1.25" color="#EF2D5E"></a-box>
+  <!--<a-sphere position="10 0 -15" radius="1.25" color="#EF2D5E"></a-sphere>-->
+  <a-box semantics="face:back; interaction:check;" position="-30 0 -3" animation="property: position; to: 10 0 -3; dur: 12500; easing: linear; loop: false" color="tomato"></a-box>
+  <a-box semantics="face:front; interaction:block;" position="-20 0 -7" animation="property: position; to: 20 0 -7; dur: 12500; easing: linear; loop: false" color="tomato"></a-box>
+  <a-box semantics="face:back; interaction:shrink;" position="-10 0 -3" animation="property: position; to: 30 0 -3; dur: 12500; easing: linear; loop: false" color="tomato"></a-box>
+
+  <a-box position="0 0 -5" radius="1.25" color="#EF2D5E"></a-box>
 </a-scene>
+<a id="stats" style="position:absolute;top:0;" href="javascript:(function(){var script=document.createElement('script');script.onload=function(){var stats=new Stats();document.body.appendChild(stats.dom);requestAnimationFrame(function loop(){stats.update();requestAnimationFrame(loop)});};script.src='//mrdoob.github.io/stats.js/build/stats.min.js';document.head.appendChild(script);})()
+"> FPS </a>
   
   
   
